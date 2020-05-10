@@ -2,7 +2,6 @@
  * @file 简单react
  */
 let nextReactRootId = 0;
-// 实例化组件 工厂方法
 class ReactDOMTextComponet {
     constructor(text) {
         this._currentElement = text;
@@ -75,6 +74,7 @@ class ReactCompositeComponent {
     constructor(element) {
         const ReactClass = element.type;
         this._currentElement = new ReactClass(element.props); // props怎么传过来？
+        this._currentElement._reactInternalInstance = this; // 把当前实例挂载在reactClass实例下面，setstate时候要用
         this._rootNodeId = null;
         this._inst = null;
     }
@@ -84,6 +84,8 @@ class ReactCompositeComponent {
         const renderedElement = this._currentElement.render(); // 得到一堆虚拟dom
         const renderedCompenentInst = instantiateReactComponent(renderedElement);
         const markUp = renderedCompenentInst.mountComponent(nextReactRootId++);
+        this._prevRenderedElement = renderedElement;
+        this._inst = renderedCompenentInst; // render出来元素的实例
 
         // TODO:记得传参
         this._currentElement.componentWillMount && this._currentElement.componentWillMount();
@@ -93,8 +95,62 @@ class ReactCompositeComponent {
         });
         return markUp;
     }
-}
 
+    receiveComponent(element, newState) {
+        this._currentElement = element || this._currentElement;
+        // 比较前后两次虚拟dom是否相同
+        const prevRenderedElement = this._prevRenderedElement;
+        const nextRenderedElement = this._currentElement.render();
+        const nextProps = this._currentElement.props;
+        const nextState = Object(this._currentElement.state, newState);
+        const {componentWillUpdate, componentDidUpdate, shouldComponentUpdate} = this._currentElement;
+
+        shouldComponentUpdate && shouldComponentUpdate(nextProps, nextState);
+        componentWillUpdate && componentWillUpdate(nextProps, nextState);
+
+        if (_shouldUpdateReactCompent(prevRenderedElement, nextRenderedElement)) {
+            // this._inst.mountComponent(nextReactRootId++); // 怎么更新呢？
+            this._inst.receiveComponent(nextRenderedElement, nextState); // nextState要不要传呢？？？
+
+            componentDidUpdate && componentDidUpdate(nextProps, nextState);
+            this._prevRenderedElement = nextRenderedElement; // 更新
+        } else { // 类型完全不一样，需要删除
+            this._inst = instantiateReactComponent(nextRenderedElement);
+            const markUp = this._inst.mountComponent(this._rootNodeId);
+            const ele = document.querySelector(`[data-reactid=${this._rootNodeId}]`);
+
+            ele.parentNode && ele.parentNode.innerHTML(markUp);
+        }
+        // 更新属性和事件....
+    }
+}
+// TODO:没太懂。。。场景没缕清
+function _shouldUpdateReactCompent(prevEle, nextEle) {
+    // 1
+    // if (preEle.type !== nextEle.type || preEle.key !== nextEle.key) {
+    //     return true;
+    // }
+    // retrun false;
+    if (prevEle && nextEle) {
+        const prevType = typeof prevEle.type;
+        const nextType = typeof nextEle.type;
+        // 这个逻辑有点绕,干嘛不用1处的逻辑
+        if (['string', 'number'].includes(prevType)) {
+            return ['string', 'number'].includes(nextType);
+        } else {
+            return nextType === 'object' && nextEle.type === prevEle.type && nextEle.key === prevEle.key;
+        }
+        // else if (
+        //     prevType === 'object' &&
+        //     typeof prevEle.type === 'function' &&
+        //     typeof prevEle.key === 'string') { // 实际上是在比较key，type
+        //     return nextType === 'object' && typeof nextEle.type === 'function' && typeof nextEle.key === 'string';
+        // }
+    }
+
+    return false;
+
+}
 class ReactElement {
     constructor(type, key, props) {
         this.type = type;
@@ -110,8 +166,12 @@ class ReactClass {
 
     render() {}
 
-    setState() {}
+    setState(newState) {
+        // this.state = Object(this.state, newState); // state合并放到receiveComponent
+        this._reactInternalInstance.receiveComponent(null, newState); // 同步的 源码里面异步是怎么实现的？
+    }
 }
+// 实例化组件 工厂方法
 function instantiateReactComponent(element) {
     // const {type} = element;
     if (['string', 'number'].includes(typeof element)) { // 文本组件
