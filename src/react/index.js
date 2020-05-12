@@ -1,7 +1,29 @@
 /**
  * @file 简单react
+ * @author liubeijing
  */
 let nextReactRootId = 0;
+// 虚拟dom更新的类型
+const UPDATE_TYPES = {
+    MOVE_EXISTING: 1,
+    REMOVE_NODE: 2,
+    INSERT_MARKUP: 3
+};
+let _diffQueue = [];
+const event = {
+    map: {},
+    addListener: (reactid, type, listener) => {
+        if (event.map[reactid]) {
+            event.map[reactid] = {};
+        }
+        event.map[reactid][type] = listener;
+        document.addListenerEventListener(type, event.map[reactid][type]);
+    },
+    removeListener: (reactid, type) => {
+        document.removeListenerEventListener(type, event.map[reactid][type]);
+        delete event.map[reactid][type];
+    }
+};
 class ReactDOMTextComponet {
     constructor(text) {
         this._currentElement = text;
@@ -16,8 +38,10 @@ class ReactDOMTextComponet {
         return markUp;
     }
     // 更新逻辑
-    receiveComponent(rootNodeId) {
-
+    receiveComponent(text) {
+        if (text !== this._currentElement) {
+            document.querySelector(`[data-reactid=${this._rootNodeId}]`).innerHTML(text);
+        }
     }
 }
 
@@ -40,7 +64,19 @@ class ReactDOMComponet {
             }
 
             if (match) {
-                document.addEventListener(match[1].toLocaleLowerCase(), (e) => {
+                // eventPool[this._rootNodeId][match[1].toLocaleLowerCase()] = (e) => {
+                //     const {path} = e;
+                //     // if (target.dataset.reactid === this._rootNodeId) {
+                //     //     typeof val === 'function' && val();
+                //     // }
+                //     // TODO:事件冒泡还没处理
+                //     path.forEach(ele => {
+                //         if (ele.dataset && ele.dataset.reactid == this._rootNodeId) {
+                //             typeof val === 'function' && val();
+                //         }
+                //     });
+                // };
+                event.addListener(this._rootNodeId, match[1].toLowerCase(), (e) => {
                     const {path} = e;
                     // if (target.dataset.reactid === this._rootNodeId) {
                     //     typeof val === 'function' && val();
@@ -51,7 +87,11 @@ class ReactDOMComponet {
                             typeof val === 'function' && val();
                         }
                     });
-                }, false);
+                });
+
+                const type = match[1].toLowerCase();
+                // document.addListenerEventListener(type, eventPool[this._rootNodeId][type], false);
+                event.addListener(this._rootNodeId, type);
             }
             return props;
         }, '');
@@ -63,10 +103,130 @@ class ReactDOMComponet {
         for (let i = 0; i < this._children.length; i++) {
             let child = this._children[i];
             let renderedCompenent = instantiateReactComponent(child);
+            renderedCompenent._mountIndex = i;
+
             markUp += renderedCompenent.mountComponent(nextReactRootId++);
         }
 
         return openTag + markUp + closeTag;
+    }
+
+    receiveComponent(nextElement) {
+        const props = this._currentElement.props;
+        const nextProps = nextElement.props;
+
+        this._updateDOMPropties(props, nextProps);
+        this._updateDOMChildren(nextElement.children);
+    }
+
+    _updateDOMPropties(props, nextProps) {
+
+        const node = document.querySelector(`[data-reactid=${this._rootNodeId}]`);
+        for (let name in nextProps) {
+            // 实例上没有的时候
+            if (!nextProps.hasOwnProperty(name)) {
+                continue;
+            }
+
+            const eventMatch = /on([\w]+)/.exec(name);
+
+            if (props[name] !== nextProps[name] && !eventMatch) {
+                node.setAttribute(name, nextProps[name]); // 更新属性
+            }
+
+            if (eventMatch) {
+                const type = eventMatch[1].toLowerCase();
+                // document.removeListenerEventListener(type, eventPool[this._rootNodeId][type]);
+                // document.addListenerEventListener(type, nextProps[eventMatch[1]]);
+                event.removeListener(this._rootNodeId, type);
+                event.addListener(this._rootNodeId, type, nextProps[eventMatch[1]]);
+            }
+        }
+
+        for (let name in props) { // 没有的属性需要删除
+            if (!props.hasOwnProperty(name)) {
+                continue;
+            }
+
+            if (nextProps[name]) {
+                node.removeAttribute(name);
+            }
+        }
+    }
+
+    _updateDOMChildren(nextChildElements) {
+        this._diff(nextChildElements);
+        this._patch();
+    }
+
+    _diff(nextChildElements) {
+        const prevChildren = this._flattenChildren(this._children);
+        // let lastIndex = 0;
+        nextChildElements.forEach((ele, index) => {
+            const name = ele.key || index;
+            const nextChildElement = ele;
+            const prevChildElement = prevChildren[name];
+
+            if (nextChildElement === prevChildElement) {
+                // 如果都有 说明只要移动就可以了
+                _diffQueue.push({
+                    type: UPDATE_TYPES.MOVE_EXISTING,
+                    parentId: this._rootNodeId,
+                    parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
+                    fromIndex: nextChildElement._mountIndex,
+                    toIndex: index // @TODO:？？
+                });
+            } else {
+                // 移除
+                if (prevChildElement) {
+                    _diffQueue.push({
+                        type: UPDATE_TYPES.REMOVE_NODE,
+                        parentId: this._rootNodeId,
+                        parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
+                        fromIndex: prevChildElement._mountIndex,
+                        toIndex: null
+                    });
+                }
+
+                if (nextChildElement) {
+                    _diffQueue.push({
+                        type: UPDATE_TYPES.INSERT_MARKUP,
+                        parentId: this._rootNodeId,
+                        parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
+                        fromIndex: nextChildElement._mountIndex,
+                        toIndex: index
+                    });
+                }
+            }
+        });
+    }
+
+    // 打平 变成map，方便查找
+    _flattenChildren(children = []) {
+        const flattenChildren = {};
+
+        children.forEach((child, index) => {
+            const name = child.key || index;
+            flattenChildren[name] = child;
+        });
+
+        return flattenChildren;
+    }
+
+    _patch() {
+        for (let i = 0; i < _diffQueue.length; i++) {
+            const diff = _diffQueue[i];
+            switch (diff.type) {
+                case UPDATE_TYPES.MOVE_EXISTING:
+                    break;
+                case UPDATE_TYPES.REMOVE_NODE:
+                    break;
+                case UPDATE_TYPES.INSERT_MARKUP:
+                    break;
+                default:
+                    break;
+            }
+        }
     }
 }
 
@@ -90,7 +250,7 @@ class ReactCompositeComponent {
         // TODO:记得传参
         this._currentElement.componentWillMount && this._currentElement.componentWillMount();
 
-        window.addEventListener('mount', () => {
+        window.addListenerEventListener('mount', () => {
             this._currentElement.componentDidMount && this._currentElement.componentDidMount();
         });
         return markUp;
@@ -110,7 +270,7 @@ class ReactCompositeComponent {
 
         if (_shouldUpdateReactCompent(prevRenderedElement, nextRenderedElement)) {
             // this._inst.mountComponent(nextReactRootId++); // 怎么更新呢？
-            this._inst.receiveComponent(nextRenderedElement, nextState); // nextState要不要传呢？？？
+            this._inst.receiveComponent(nextRenderedElement, nextState); // @TODO:nextState要不要传呢？？？
 
             componentDidUpdate && componentDidUpdate(nextProps, nextState);
             this._prevRenderedElement = nextRenderedElement; // 更新
@@ -121,10 +281,9 @@ class ReactCompositeComponent {
 
             ele.parentNode && ele.parentNode.innerHTML(markUp);
         }
-        // 更新属性和事件....
     }
 }
-// TODO:没太懂。。。场景没缕清
+// TODO:没太懂。。。场景没缕清 判断时更新还是重新渲染
 function _shouldUpdateReactCompent(prevEle, nextEle) {
     // 1
     // if (preEle.type !== nextEle.type || preEle.key !== nextEle.key) {
