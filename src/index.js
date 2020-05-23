@@ -17,12 +17,13 @@ const HelloMsg = React.createClass({
         console.log('组件已经渲染');
     },
     render() {
+        console.log('render', this.state);
         return React.createElement('div', {className: 'aaa', onClick: () => {
             this.setState({
                 name: 'ligoudan'
             });
-            console.log(this.state.name);
-        }}, this.props.msg);
+            console.log(this.state.name, this.state);
+        }}, this.props.msg, <div>{this.state.name}</div>);
     }
 });
 // React.render(React.createElement('div', {className: 'aaa'}, 'hhhhh'),
@@ -30,10 +31,18 @@ const HelloMsg = React.createClass({
 // );
 
 // 之前以为是直接传HelloMsg 还在疑惑怎么传props...createElement这么用就明白了
+// React.render(
+//     React.createElement(HelloMsg, {msg: 'hello world'}, null),
+//     document.getElementById('root')
+// );
 React.render(
-    React.createElement(HelloMsg, {msg: 'hello world'}, null),
+    <HelloMsg msg="hello world!"/>,
     document.getElementById('root')
 );
+// React.render(
+//     'hello world',
+//     document.getElementById('root')
+// );
 
 // If you want your app to work offline and load faster, you can change
 // unregister() to register() below. Note this comes with some pitfalls.

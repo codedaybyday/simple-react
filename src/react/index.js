@@ -10,18 +10,27 @@ const UPDATE_TYPES = {
     INSERT_MARKUP: 3
 };
 let _diffQueue = [];
+let _updateDepth = 0;
 const event = {
-    map: {},
+    listeners: {},
     addListener: (reactid, type, listener) => {
-        if (event.map[reactid]) {
-            event.map[reactid] = {};
+        if (!event.listeners[reactid]) {
+            event.listeners[reactid] = {};
         }
-        event.map[reactid][type] = listener;
-        document.addListenerEventListener(type, event.map[reactid][type]);
+        event.listeners[reactid][type] = listener;
+        document.addEventListener(type, event.listeners[reactid][type]);
     },
     removeListener: (reactid, type) => {
-        document.removeListenerEventListener(type, event.map[reactid][type]);
-        delete event.map[reactid][type];
+        if (!reactid) {
+            throw new Error('reactid 必传！');
+        }
+
+        if (type) {
+            document.removeEventListener(type, event.listeners[reactid][type]);
+            delete event.listeners[reactid][type];
+        } else {
+            delete event.listeners[reactid];
+        }
     }
 };
 class ReactDOMTextComponet {
@@ -33,14 +42,15 @@ class ReactDOMTextComponet {
     // 真正的挂载逻辑
     mountComponent(rootNodeId) {
         this._rootNodeId = rootNodeId;
-        const markUp = `<span data-reactid=${this._rootNodeId}>${this._currentElement}</span>`;
+        const markup = `<span data-reactid=${this._rootNodeId}>${this._currentElement}</span>`;
 
-        return markUp;
+        return markup;
     }
     // 更新逻辑
     receiveComponent(text) {
         if (text !== this._currentElement) {
-            document.querySelector(`[data-reactid=${this._rootNodeId}]`).innerHTML(text);
+            this._currentElement = text;
+            document.querySelector(`[data-reactid="${this._rootNodeId}"]`).innerHTML(text);
         }
     }
 }
@@ -50,12 +60,12 @@ class ReactDOMComponet {
         this._rootNodeId = null;
         this._inst = null;
         this._currentElement = element;
-        this._children = element.props.children;
+        this._renderedChildren = [];
     }
 
     mountComponent(rootNodeId) {
         this._rootNodeId = rootNodeId;
-        let markUp = '';
+        let markup = '';
         let props = Object.entries(this._currentElement.props).reduce((props, [key, val]) => {
             // 处理事件
             let match = /^on([\w]+)/.exec(key);
@@ -99,16 +109,17 @@ class ReactDOMComponet {
         let openTag = `<${this._currentElement.type} data-reactid=${this._rootNodeId} ${props}>`;
         let closeTag = `</${this._currentElement.type}>`;
 
-
-        for (let i = 0; i < this._children.length; i++) {
-            let child = this._children[i];
+        const _children = this._currentElement.props.children;
+        for (let i = 0; i < _children.length; i++) {
+            let child = _children[i];
             let renderedCompenent = instantiateReactComponent(child);
             renderedCompenent._mountIndex = i;
+            this._renderedChildren.push(renderedCompenent);
 
-            markUp += renderedCompenent.mountComponent(nextReactRootId++);
+            markup += renderedCompenent.mountComponent(nextReactRootId++);
         }
 
-        return openTag + markUp + closeTag;
+        return openTag + markup + closeTag;
     }
 
     receiveComponent(nextElement) {
@@ -116,12 +127,12 @@ class ReactDOMComponet {
         const nextProps = nextElement.props;
 
         this._updateDOMPropties(props, nextProps);
-        this._updateDOMChildren(nextElement.children);
+        this._updateDOMChildren(nextProps.children);
     }
 
     _updateDOMPropties(props, nextProps) {
 
-        const node = document.querySelector(`[data-reactid=${this._rootNodeId}]`);
+        const node = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
         for (let name in nextProps) {
             // 实例上没有的时候
             if (!nextProps.hasOwnProperty(name)) {
@@ -155,73 +166,155 @@ class ReactDOMComponet {
     }
 
     _updateDOMChildren(nextChildElements) {
-        this._diff(nextChildElements);
-        this._patch();
+        _updateDepth++;
+        this._diff(_diffQueue, nextChildElements);
+        _updateDepth--;
+
+        if (_updateDepth === 0) {
+            this._patch(_diffQueue);
+            _diffQueue = [];
+        }
     }
 
-    _diff(nextChildElements) {
-        const prevChildren = this._flattenChildren(this._children);
-        // let lastIndex = 0;
-        nextChildElements.forEach((ele, index) => {
-            const name = ele.key || index;
-            const nextChildElement = ele;
-            const prevChildElement = prevChildren[name];
+    // @TODO:为啥不直接对比虚拟dom，还需要先对比component?
+    _diff(nextChildElements = []) {
+        const prevChildren = _flattenChildren(this._renderedChildren);
+        const nextChildren = _generateComponentChildren(prevChildren, nextChildElements);
+        // 需要获取下一个children集合
+        let nextIndex = 0;
+        this._renderedChildren = [];
+        Object.entries(nextChildren).forEach(([key, value]) => {
+            // @TODO:顺序怎么保证？？？
+            this._renderedChildren.push(value);
+        });
 
-            if (nextChildElement === prevChildElement) {
-                // 如果都有 说明只要移动就可以了
+        const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
+        console.log('parentNode', parentNode);
+        for (let name in nextChildren) {
+            if (!nextChildren.hasOwnProperty(name)) {
+                continue;
+            }
+            const nextChild = nextChildren[name];
+            const prevChild = prevChildren[name];
+
+            // 比较component引用
+            if (nextChild === prevChild) {
                 _diffQueue.push({
                     type: UPDATE_TYPES.MOVE_EXISTING,
                     parentId: this._rootNodeId,
-                    parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
-                    fromIndex: nextChildElement._mountIndex,
-                    toIndex: index // @TODO:？？
+                    parentNode,
+                    fromIndex: prevChild._mountIndex,
+                    toIndex: nextIndex // @TODO:？？
                 });
             } else {
                 // 移除
-                if (prevChildElement) {
+                if (prevChild) {
                     _diffQueue.push({
                         type: UPDATE_TYPES.REMOVE_NODE,
                         parentId: this._rootNodeId,
-                        parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
-                        fromIndex: prevChildElement._mountIndex,
+                        parentNode,
+                        fromIndex: prevChild._mountIndex,
                         toIndex: null
                     });
+                    // @TODO:清理事件
+                    event.removeListener(this._rootNodeId);
                 }
 
-                if (nextChildElement) {
-                    _diffQueue.push({
-                        type: UPDATE_TYPES.INSERT_MARKUP,
-                        parentId: this._rootNodeId,
-                        parentNode: document.querySelector(`[data-reactid=${this._rootNodeId}]`),
-                        fromIndex: nextChildElement._mountIndex,
-                        toIndex: index
-                    });
-                }
+                _diffQueue.push({
+                    type: UPDATE_TYPES.INSERT_MARKUP,
+                    parentId: this._rootNodeId,
+                    parentNode,
+                    fromIndex: null,
+                    toIndex: nextIndex,
+                    markup: nextChild.mountComponent()
+                });
             }
-        });
-    }
 
-    // 打平 变成map，方便查找
-    _flattenChildren(children = []) {
-        const flattenChildren = {};
+            nextIndex++;
+        }
 
-        children.forEach((child, index) => {
-            const name = child.key || index;
-            flattenChildren[name] = child;
-        });
+        for (let name in prevChildren) {
+            const prevChild = prevChildren[name];
+            // 老的有 新的没有 移出
+            if (prevChildren.hasOwnProperty(name) && (nextChildren && !nextChildren.hasOwnProperty(name))) {
+                _diffQueue.push({
+                    type: UPDATE_TYPES.REMOVE_NODE,
+                    parentId: this._rootNodeId,
+                    parentNode,
+                    fromIndex: prevChild._mountIndex,
+                    toIndex: null
+                });
+                // @TODO:清理事件
+                event.removeListener(this._rootNodeId);
+            }
+        }
+        // 之前直接比较虚拟dom了.....
+        // nextChildElements.forEach((nextChildElement, index) => {
+        //     const name = nextChildElement.key || index;
+        //     // const nextChildElement = ele;
+        //     const prevChildElement = prevChildren[name];
+        //     const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}]"`);
+        //     console.log('nextChildElement', nextChildElement);
 
-        return flattenChildren;
+        //     // @TODO:不能直接比较引用，应该比较key和type
+        //     if (nextChildElement === prevChildElement) {
+        //         // 如果都有 说明只要移动就可以了
+        //         _diffQueue.push({
+        //             type: UPDATE_TYPES.MOVE_EXISTING,
+        //             parentId: this._rootNodeId,
+        //             parentNode,
+        //             fromIndex: nextChildElement._mountIndex,
+        //             toIndex: index // @TODO:？？
+        //         });
+        //     } else {
+        //         // 移除
+        //         if (prevChildElement) {
+        //             _diffQueue.push({
+        //                 type: UPDATE_TYPES.REMOVE_NODE,
+        //                 parentId: this._rootNodeId,
+        //                 parentNode,
+        //                 fromIndex: prevChildElement._mountIndex,
+        //                 toIndex: null
+        //             });
+        //         }
+
+        //         if (nextChildElement) {
+        //             _diffQueue.push({
+        //                 type: UPDATE_TYPES.INSERT_MARKUP,
+        //                 parentId: this._rootNodeId,
+        //                 parentNode,
+        //                 fromIndex: nextChildElement._mountIndex,
+        //                 toIndex: index,
+        //                 ele: nextChildElement
+        //             });
+        //         }
+        //     }
+        // });
     }
 
     _patch() {
+        console.log('_diffQueue', _diffQueue);
         for (let i = 0; i < _diffQueue.length; i++) {
-            const diff = _diffQueue[i];
-            switch (diff.type) {
+            const {parentNode, fromIndex, toIndex, type, ele} = _diffQueue[i] || {};
+            const children = parentNode.children;
+            console.log('child', children);
+            switch (type) {
                 case UPDATE_TYPES.MOVE_EXISTING:
+                    // 交换位置？
+                    [children[toIndex], children[fromIndex]] = [children[fromIndex], children[toIndex]];
                     break;
                 case UPDATE_TYPES.REMOVE_NODE:
+                    children[fromIndex].remove();
                     break;
                 case UPDATE_TYPES.INSERT_MARKUP:
+                    const insertComponentInst = instantiateReactComponent(ele);
+                    const markup = insertComponentInst.mountComponent(nextReactRootId++);
+                    const child = _html2Node(markup);
+                    if (toIndex > children.length) { // 从尾巴加添加
+                        parentNode.appendChild(child);
+                    } else {
+                        children[toIndex + 1].insertBefore(child);
+                    }
                     break;
                 default:
                     break;
@@ -243,17 +336,17 @@ class ReactCompositeComponent {
         this._rootNodeId = rootNodeId;
         const renderedElement = this._currentElement.render(); // 得到一堆虚拟dom
         const renderedCompenentInst = instantiateReactComponent(renderedElement);
-        const markUp = renderedCompenentInst.mountComponent(nextReactRootId++);
+        const markup = renderedCompenentInst.mountComponent(nextReactRootId++);
         this._prevRenderedElement = renderedElement;
         this._inst = renderedCompenentInst; // render出来元素的实例
 
         // TODO:记得传参
         this._currentElement.componentWillMount && this._currentElement.componentWillMount();
 
-        window.addListenerEventListener('mount', () => {
+        window.addEventListener('mount', () => {
             this._currentElement.componentDidMount && this._currentElement.componentDidMount();
         });
-        return markUp;
+        return markup;
     }
 
     receiveComponent(element, newState) {
@@ -262,8 +355,11 @@ class ReactCompositeComponent {
         const prevRenderedElement = this._prevRenderedElement;
         const nextRenderedElement = this._currentElement.render();
         const nextProps = this._currentElement.props;
-        const nextState = Object(this._currentElement.state, newState);
+        const nextState = Object.assign({}, this._currentElement.state, newState);
         const {componentWillUpdate, componentDidUpdate, shouldComponentUpdate} = this._currentElement;
+
+        this._currentElement.state = nextState;
+        console.log('receiveComponent', this._currentElement, nextState, newState);
 
         shouldComponentUpdate && shouldComponentUpdate(nextProps, nextState);
         componentWillUpdate && componentWillUpdate(nextProps, nextState);
@@ -276,12 +372,51 @@ class ReactCompositeComponent {
             this._prevRenderedElement = nextRenderedElement; // 更新
         } else { // 类型完全不一样，需要删除
             this._inst = instantiateReactComponent(nextRenderedElement);
-            const markUp = this._inst.mountComponent(this._rootNodeId);
-            const ele = document.querySelector(`[data-reactid=${this._rootNodeId}]`);
+            const markup = this._inst.mountComponent(this._rootNodeId);
+            const ele = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
 
-            ele.parentNode && ele.parentNode.innerHTML(markUp);
+            ele.parentNode && ele.parentNode.innerHTML(markup);
         }
     }
+}
+
+/**
+ * @description 打平 变成map，方便查找
+ * @param {Array} children 注意：是指渲染后的组件实例集合，并不是指的虚拟dom
+ * @return {Object} 集合
+ */
+function _flattenChildren(children = []) {
+    const flattenChildren = {};
+
+    children.forEach((child, index) => {
+        const name = child._currentElement && child._currentElement.key || index;
+        flattenChildren[name] = child;
+    });
+
+    return flattenChildren;
+}
+/**
+ * @TODO:为啥要通过prevChildren 生成最新的nextChildElements集合呢？直接用遍历nextChildElements.mount不行么？
+ * @param {object} prevChildren 旧的子元素生成的组件集合
+ * @param {Array} nextChildElements 最新子元素（虚拟节点）
+ */
+function _generateComponentChildren(prevChildren, nextChildElements) {
+    const nextChildren = {};
+
+    nextChildElements.forEach((nextChildElement, index) => {
+        const name = nextChildElement.key || index;
+        const prevChild = prevChildren[name];
+        const prevChildElement = prevChild._currentElement;
+
+        if (_shouldUpdateReactCompent(prevChildElement, nextChildElement)) {
+            prevChild.receiveComponent(nextChildElement);
+            nextChildren[name] = prevChild;
+        } else {
+            const newChild = instantiateReactComponent(nextChildElement);
+            nextChildren[name] = newChild;
+        }
+    });
+    return nextChildren;
 }
 // TODO:没太懂。。。场景没缕清 判断时更新还是重新渲染
 function _shouldUpdateReactCompent(prevEle, nextEle) {
@@ -310,6 +445,13 @@ function _shouldUpdateReactCompent(prevEle, nextEle) {
     return false;
 
 }
+
+function _html2Node(html) {
+    const div = document.createElement('div');
+    div.innerHTML(html);
+
+    return div.children;
+}
 class ReactElement {
     constructor(type, key, props) {
         this.type = type;
@@ -327,6 +469,7 @@ class ReactClass {
 
     setState(newState) {
         // this.state = Object(this.state, newState); // state合并放到receiveComponent
+        console.log(this._reactInternalInstance);
         this._reactInternalInstance.receiveComponent(null, newState); // 同步的 源码里面异步是怎么实现的？
     }
 }
@@ -354,15 +497,17 @@ const React = {
             children
         };
         const {key = null} = config;
-
+        // const children = [];
         for (let key in config) {
             if (config.hasOwnProperty(key) && config[key]) {
                 props[key] = config[key];
             }
         }
+
         // 生成一颗树。但是为啥不直接生成这样的？
         return new ReactElement(type, key, props);
     },
+    // @TODO:跟es6写法有什么区别？
     // 自定义组件 其实就是讲将一个类重新组装继承一下
     createClass: (spec) => {
         // props怎么传过去？？后续怎么实例化的
@@ -381,11 +526,11 @@ const React = {
     },
     render: (element, container) => {
         const renderedCompenent = instantiateReactComponent(element);
-        const markUp = renderedCompenent.mountComponent(nextReactRootId++);
+        const markup = renderedCompenent.mountComponent(nextReactRootId++);
         const event = new CustomEvent('mount');
         window.dispatchEvent(event);
 
-        container.innerHTML = markUp;
+        container.innerHTML = markup;
     }
 };
 
