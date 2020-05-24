@@ -2,6 +2,7 @@
  * @file 简单react
  * @author liubeijing
  */
+import uuid from 'uuid';
 let nextReactRootId = 0;
 // 虚拟dom更新的类型
 const UPDATE_TYPES = {
@@ -11,6 +12,7 @@ const UPDATE_TYPES = {
 };
 let _diffQueue = [];
 let _updateDepth = 0;
+
 const event = {
     listeners: {},
     addListener: (reactid, type, listener) => {
@@ -21,7 +23,7 @@ const event = {
         document.addEventListener(type, event.listeners[reactid][type]);
     },
     removeListener: (reactid, type) => {
-        if (!reactid) {
+        if (reactid === undefined || reactid === null || reactid === '') {
             throw new Error('reactid 必传！');
         }
 
@@ -50,7 +52,7 @@ class ReactDOMTextComponet {
     receiveComponent(text) {
         if (text !== this._currentElement) {
             this._currentElement = text;
-            document.querySelector(`[data-reactid="${this._rootNodeId}"]`).innerHTML(text);
+            document.querySelector(`[data-reactid="${this._rootNodeId}"]`).innerHTML = text;
         }
     }
 }
@@ -67,6 +69,10 @@ class ReactDOMComponet {
         this._rootNodeId = rootNodeId;
         let markup = '';
         let props = Object.entries(this._currentElement.props).reduce((props, [key, val]) => {
+            // console.log(key, val);
+            if (!this._currentElement.props.hasOwnProperty(key)) {
+                return props;
+            }
             // 处理事件
             let match = /^on([\w]+)/.exec(key);
             if (key !== 'children' && !match) {
@@ -110,13 +116,19 @@ class ReactDOMComponet {
         let closeTag = `</${this._currentElement.type}>`;
 
         const _children = this._currentElement.props.children;
+        console.log(_children);
         for (let i = 0; i < _children.length; i++) {
             let child = _children[i];
             let renderedCompenent = instantiateReactComponent(child);
-            renderedCompenent._mountIndex = i;
-            this._renderedChildren.push(renderedCompenent);
+            console.log('child, renderedCompenent', child, renderedCompenent);
+            // 有可能是个bool
+            if (renderedCompenent) {
+                renderedCompenent._mountIndex = i;
 
-            markup += renderedCompenent.mountComponent(nextReactRootId++);
+                this._renderedChildren.push(renderedCompenent);
+
+                markup += renderedCompenent.mountComponent(nextReactRootId++);
+            }
         }
 
         return openTag + markup + closeTag;
@@ -127,7 +139,8 @@ class ReactDOMComponet {
         const nextProps = nextElement.props;
 
         this._updateDOMPropties(props, nextProps);
-        this._updateDOMChildren(nextProps.children);
+        // @TODO:有子元素为bool的情况，先暂时过滤掉，后续待优化
+        this._updateDOMChildren(Array.prototype.filter.call(nextProps.children, child => !!child));
     }
 
     _updateDOMPropties(props, nextProps) {
@@ -177,9 +190,12 @@ class ReactDOMComponet {
     }
 
     // @TODO:为啥不直接对比虚拟dom，还需要先对比component?
-    _diff(nextChildElements = []) {
+    _diff(_diffQueue, nextChildElements = []) {
         const prevChildren = _flattenChildren(this._renderedChildren);
         const nextChildren = _generateComponentChildren(prevChildren, nextChildElements);
+        console.log('diff nextChildElements=>', nextChildElements);
+        console.log('prevChildren=>', prevChildren);
+        console.log('nextChildren=>', nextChildren);
         // 需要获取下一个children集合
         let nextIndex = 0;
         this._renderedChildren = [];
@@ -189,7 +205,6 @@ class ReactDOMComponet {
         });
 
         const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
-        console.log('parentNode', parentNode);
         for (let name in nextChildren) {
             if (!nextChildren.hasOwnProperty(name)) {
                 continue;
@@ -226,7 +241,7 @@ class ReactDOMComponet {
                     parentNode,
                     fromIndex: null,
                     toIndex: nextIndex,
-                    markup: nextChild.mountComponent()
+                    markup: nextChild.mountComponent(nextReactRootId++) // @TODO:为啥不直接传组件？
                 });
             }
 
@@ -295,25 +310,32 @@ class ReactDOMComponet {
     _patch() {
         console.log('_diffQueue', _diffQueue);
         for (let i = 0; i < _diffQueue.length; i++) {
-            const {parentNode, fromIndex, toIndex, type, ele} = _diffQueue[i] || {};
+            const {parentNode, fromIndex, toIndex, type, markup} = _diffQueue[i] || {};
             const children = parentNode.children;
-            console.log('child', children);
             switch (type) {
                 case UPDATE_TYPES.MOVE_EXISTING:
-                    // 交换位置？
-                    [children[toIndex], children[fromIndex]] = [children[fromIndex], children[toIndex]];
+                    // 交换位置？这种方法并不可行，需要操作实际的dom才行。MOVE_EXSTING事实上也是先移除再插入
+                    // [children[toIndex], children[fromIndex]] = [children[fromIndex], children[toIndex]];
+                    // @TODO:待优化，可以封装成insertAfter
+                    if (toIndex + 1 <= children.length) {
+                        parentNode.insertBefore(children[fromIndex], children[toIndex + 1]);
+                    } else {
+                        parentNode.appendChild(children[fromIndex].cloneNode(true));
+                        children[fromIndex].remove();
+                    }
                     break;
                 case UPDATE_TYPES.REMOVE_NODE:
                     children[fromIndex].remove();
                     break;
                 case UPDATE_TYPES.INSERT_MARKUP:
-                    const insertComponentInst = instantiateReactComponent(ele);
-                    const markup = insertComponentInst.mountComponent(nextReactRootId++);
-                    const child = _html2Node(markup);
-                    if (toIndex > children.length) { // 从尾巴加添加
+                    // const insertComponentInst = instantiateReactComponent();
+                    // const markup = insertComponentInst.mountComponent(nextReactRootId++);
+                    const child = _html2Node(markup)[0];
+                    if (toIndex >= children.length) { // 从尾巴加添加
                         parentNode.appendChild(child);
                     } else {
-                        children[toIndex + 1].insertBefore(child);
+                        // children[toIndex].insertBefore(child);
+                        parentNode.insertBefore(child, children[toIndex]);
                     }
                     break;
                 default:
@@ -336,9 +358,11 @@ class ReactCompositeComponent {
         this._rootNodeId = rootNodeId;
         const renderedElement = this._currentElement.render(); // 得到一堆虚拟dom
         const renderedCompenentInst = instantiateReactComponent(renderedElement);
-        const markup = renderedCompenentInst.mountComponent(nextReactRootId++);
+        const markup = renderedCompenentInst.mountComponent(this._rootNodeId);
         this._prevRenderedElement = renderedElement;
         this._inst = renderedCompenentInst; // render出来元素的实例
+        console.log('renderedElement=>', renderedElement);
+        console.log('this._currentElement=>', this._currentElement.render);
 
         // TODO:记得传参
         this._currentElement.componentWillMount && this._currentElement.componentWillMount();
@@ -352,18 +376,20 @@ class ReactCompositeComponent {
     receiveComponent(element, newState) {
         this._currentElement = element || this._currentElement;
         // 比较前后两次虚拟dom是否相同
-        const prevRenderedElement = this._prevRenderedElement;
-        const nextRenderedElement = this._currentElement.render();
         const nextProps = this._currentElement.props;
         const nextState = Object.assign({}, this._currentElement.state, newState);
+        this._currentElement.state = nextState;
+        const prevRenderedElement = this._prevRenderedElement;
+        const nextRenderedElement = this._currentElement.render();
         const {componentWillUpdate, componentDidUpdate, shouldComponentUpdate} = this._currentElement;
 
-        this._currentElement.state = nextState;
-        console.log('receiveComponent', this._currentElement, nextState, newState);
 
-        shouldComponentUpdate && shouldComponentUpdate(nextProps, nextState);
+        if (shouldComponentUpdate && !shouldComponentUpdate(nextProps, nextState)) {
+            return;
+        }
         componentWillUpdate && componentWillUpdate(nextProps, nextState);
 
+        console.log(prevRenderedElement, nextRenderedElement);
         if (_shouldUpdateReactCompent(prevRenderedElement, nextRenderedElement)) {
             // this._inst.mountComponent(nextReactRootId++); // 怎么更新呢？
             this._inst.receiveComponent(nextRenderedElement, nextState); // @TODO:nextState要不要传呢？？？
@@ -373,9 +399,11 @@ class ReactCompositeComponent {
         } else { // 类型完全不一样，需要删除
             this._inst = instantiateReactComponent(nextRenderedElement);
             const markup = this._inst.mountComponent(this._rootNodeId);
-            const ele = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
-
-            ele.parentNode && ele.parentNode.innerHTML(markup);
+            const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
+            // console.log(ele, this._rootNodeId, nextReactRootId);
+            // ele.parentNode && ele.parentNode.innerHTML(markup);
+            console.log(this._rootNodeId, markup);
+            parentNode.parentNode.innerHTML = markup;
         }
     }
 }
@@ -404,10 +432,14 @@ function _generateComponentChildren(prevChildren, nextChildElements) {
     const nextChildren = {};
 
     nextChildElements.forEach((nextChildElement, index) => {
-        const name = nextChildElement.key || index;
+        const name = nextChildElement && nextChildElement.key || index;
         const prevChild = prevChildren[name];
-        const prevChildElement = prevChild._currentElement;
+        const prevChildElement = prevChild && prevChild._currentElement;
 
+        console.log('prevChildElement', prevChildElement);
+        console.log('nextChildElement', nextChildElement);
+
+        console.log('_shouldUpdateReactCompent=>', _shouldUpdateReactCompent(prevChildElement, nextChildElement));
         if (_shouldUpdateReactCompent(prevChildElement, nextChildElement)) {
             prevChild.receiveComponent(nextChildElement);
             nextChildren[name] = prevChild;
@@ -426,8 +458,8 @@ function _shouldUpdateReactCompent(prevEle, nextEle) {
     // }
     // retrun false;
     if (prevEle && nextEle) {
-        const prevType = typeof prevEle.type;
-        const nextType = typeof nextEle.type;
+        const prevType = typeof prevEle;
+        const nextType = typeof nextEle;
         // 这个逻辑有点绕,干嘛不用1处的逻辑
         if (['string', 'number'].includes(prevType)) {
             return ['string', 'number'].includes(nextType);
@@ -448,7 +480,7 @@ function _shouldUpdateReactCompent(prevEle, nextEle) {
 
 function _html2Node(html) {
     const div = document.createElement('div');
-    div.innerHTML(html);
+    div.innerHTML = html;
 
     return div.children;
 }
@@ -469,7 +501,7 @@ class ReactClass {
 
     setState(newState) {
         // this.state = Object(this.state, newState); // state合并放到receiveComponent
-        console.log(this._reactInternalInstance);
+        console.log('setState', newState);
         this._reactInternalInstance.receiveComponent(null, newState); // 同步的 源码里面异步是怎么实现的？
     }
 }
@@ -497,13 +529,14 @@ const React = {
             children
         };
         const {key = null} = config;
+        // const {key = Math.random()} = config; // @TODO:使用random 每次都不一样，是整个都刷新了，该方案不可行
         // const children = [];
         for (let key in config) {
             if (config.hasOwnProperty(key) && config[key]) {
                 props[key] = config[key];
             }
         }
-
+        console.log('createElement', key);
         // 生成一颗树。但是为啥不直接生成这样的？
         return new ReactElement(type, key, props);
     },
