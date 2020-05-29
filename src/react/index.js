@@ -2,7 +2,6 @@
  * @file 简单react
  * @author liubeijing
  */
-import uuid from 'uuid';
 let nextReactRootId = 0;
 // 虚拟dom更新的类型
 const UPDATE_TYPES = {
@@ -205,22 +204,26 @@ class ReactDOMComponet {
         });
 
         const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
+        let lastIndex = 0;
         for (let name in nextChildren) {
             if (!nextChildren.hasOwnProperty(name)) {
                 continue;
             }
             const nextChild = nextChildren[name];
             const prevChild = prevChildren[name];
-
+            // console.log(prevChild._mountIndex);
             // 比较component引用
+            // @TODO:待优化，会出现很多fromIndex和toIndex相等的情况，事实上他们并不需要移动，影响性能
             if (nextChild === prevChild) {
-                _diffQueue.push({
-                    type: UPDATE_TYPES.MOVE_EXISTING,
-                    parentId: this._rootNodeId,
-                    parentNode,
-                    fromIndex: prevChild._mountIndex,
-                    toIndex: nextIndex // @TODO:？？
-                });
+                if (prevChild && lastIndex > prevChild._mountIndex) { // 为啥??
+                    _diffQueue.push({
+                        type: UPDATE_TYPES.MOVE_EXISTING,
+                        parentId: this._rootNodeId,
+                        parentNode,
+                        fromIndex: prevChild._mountIndex,
+                        toIndex: nextIndex // @TODO:？？
+                    });
+                }
             } else {
                 // 移除
                 if (prevChild) {
@@ -244,8 +247,11 @@ class ReactDOMComponet {
                     markup: nextChild.mountComponent(nextReactRootId++) // @TODO:为啥不直接传组件？
                 });
             }
-
+            nextChild._mountIndex = nextIndex; // 记得更新，不然下次更新没有索引会报错
             nextIndex++;
+            if (prevChild) {
+                lastIndex = Math.max(lastIndex, prevChild._mountIndex);
+            }
         }
 
         for (let name in prevChildren) {
@@ -441,11 +447,15 @@ function _generateComponentChildren(prevChildren, nextChildElements) {
 
         console.log('_shouldUpdateReactCompent=>', _shouldUpdateReactCompent(prevChildElement, nextChildElement));
         if (_shouldUpdateReactCompent(prevChildElement, nextChildElement)) {
-            prevChild.receiveComponent(nextChildElement);
-            nextChildren[name] = prevChild;
-        } else {
+            if (nextChildElement && prevChild) { // 注意不能为空 否则 nextChildren=> {0: undefined}
+                prevChild.receiveComponent(nextChildElement);
+                nextChildren[name] = prevChild;
+            }
+        } else if (nextChildElement) {
             const newChild = instantiateReactComponent(nextChildElement);
-            nextChildren[name] = newChild;
+            if (newChild) {
+                nextChildren[name] = newChild;
+            }
         }
     });
     return nextChildren;

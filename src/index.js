@@ -9,7 +9,21 @@ const HelloMsg = React.createClass({
         return {
             name: 'liubeijing',
             count: 1,
-            visible: false
+            visible: false,
+            list: [
+                {
+                    name: '11111111',
+                    key: 'aaaaa'
+                },
+                {
+                    name: '222222',
+                    key: 'aaaaawww'
+                },
+                {
+                    name: '33333',
+                    key: 'vvvvvv'
+                }
+            ]
         };
     },
     componentWillMount() {
@@ -37,6 +51,15 @@ const HelloMsg = React.createClass({
                 <button onClick={() => {this.setState({visible: !this.state.visible})}}>切换显隐</button>
                 {this.state.visible && <div>hhhhhhhhhhhhhhhh</div>}
             </div>
+            <ul>
+                {
+                    this.state.list.map(item => {
+                        return (<li key={item.key}>
+                            {item.name}
+                        </li>);
+                    })
+                }
+            </ul>
         </div>);
     }
 });
