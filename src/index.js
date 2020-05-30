@@ -51,6 +51,7 @@ const HelloMsg = React.createClass({
                 <button onClick={() => {this.setState({visible: !this.state.visible})}}>切换显隐</button>
                 {this.state.visible && <div>hhhhhhhhhhhhhhhh</div>}
             </div>
+            {/**数组渲染不出来？ */}
             <ul>
                 {
                     this.state.list.map(item => {
