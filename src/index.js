@@ -43,17 +43,25 @@ const HelloMsg = React.createClass({
     // }
     render() {
         return (<div className="aaa">
-            <div>
+            {/* <div>
                 计数器：{this.state.count}
                 <button onClick={() => {this.setState({count: this.state.count + 1})}}>点击累积计数</button>
             </div>
             <div>
                 <button onClick={() => {this.setState({visible: !this.state.visible})}}>切换显隐</button>
                 {this.state.visible && <div>hhhhhhhhhhhhhhhh</div>}
+            </div> */}
+            {/**数组渲染不出来？ */}
+            <div><button onClick={() => {
+                const list = this.state.list;
+                list.push(list.pop());
+                this.setState({list});
+                }}>改变顺序</button>
             </div>
             <ul>
                 {
                     this.state.list.map(item => {
+                        console.log('item=>', item);
                         return (<li key={item.key}>
                             {item.name}
                         </li>);
