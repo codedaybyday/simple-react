@@ -1,11 +1,13 @@
 import React from './react';
+// import React from 'react';
 // import ReactDOM from 'react-dom';
 import './index.css';
-// import App from './App';
 import * as serviceWorker from './serviceWorker';
+// import $ from 'jquery';
+//component类，用来表示文本在渲染，更新，删除时应该做些什么事情
 
 const HelloMsg = React.createClass({
-    getInitState() {
+    getInitialState() {
         return {
             name: 'liubeijing',
             count: 1,
@@ -43,25 +45,24 @@ const HelloMsg = React.createClass({
     // }
     render() {
         return (<div className="aaa">
-            {/* <div>
+            <div>
                 计数器：{this.state.count}
                 <button onClick={() => {this.setState({count: this.state.count + 1})}}>点击累积计数</button>
             </div>
             <div>
                 <button onClick={() => {this.setState({visible: !this.state.visible})}}>切换显隐</button>
                 {this.state.visible && <div>hhhhhhhhhhhhhhhh</div>}
-            </div> */}
+            </div>
             {/**数组渲染不出来？ */}
             <div><button onClick={() => {
-                const list = this.state.list;
-                list.push(list.pop());
+                const list = Object.assign([], this.state.list);
+                list.unshift(list.pop());
                 this.setState({list});
                 }}>改变顺序</button>
             </div>
             <ul>
                 {
                     this.state.list.map(item => {
-                        console.log('item=>', item);
                         return (<li key={item.key}>
                             {item.name}
                         </li>);
@@ -84,6 +85,11 @@ React.render(
     <HelloMsg msg="hello world!"/>,
     document.getElementById('root')
 );
+// console.log('HelloMsg=>', HelloMsg);
+// ReactDOM.render(
+//     <HelloMsg msg="hello world!"/>,
+//     document.getElementById('root')
+// );
 // React.render(
 //     'hello world',
 //     document.getElementById('root')

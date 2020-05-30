@@ -13,4 +13,4 @@ const React = {
     render
 };
 
-export default React;
+export default React; // eslint-disable-line

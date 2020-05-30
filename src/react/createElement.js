@@ -4,11 +4,13 @@
  */
 import ReactElement from './ReactElement';
 
-export default (type, config, children) => {
+export default (type, config, ...children) => {
     const props = {
-        children
+        children: children.length === 1 ?
+            Array.isArray(children[0])
+                ? children[0] : children
+            : children
     };
-    console.log('createElement-children=>', children);
     const {key = null} = config;
     // const {key = Math.random()} = config; // @TODO:使用random 每次都不一样，是整个都刷新了，该方案不可行
     // const children = [];
@@ -17,7 +19,6 @@ export default (type, config, children) => {
             props[key] = config[key];
         }
     }
-    console.log('createElement', key);
     // 生成一颗树。但是为啥不直接生成这样的？
     return new ReactElement(type, key, props);
 };

@@ -3,11 +3,11 @@
  * @author liubeijing
  */
 import {instantiateReactComponent} from './render';
-import {_shouldUpdateReactCompent, _flattenChildren, _html2Node} from './utils';
+import {shouldUpdateReactCompent, flattenChildren, html2Node} from './utils';
 import UPDATE_TYPES from './const';
 import event from './event';
-let _diffQueue = [];
-let _updateDepth = 0;
+let diffQueue = [];
+let updateDepth = 0;
 // let nextReactRootId = window.nextReactRootId;
 
 export default class ReactDOMComponet {
@@ -22,7 +22,6 @@ export default class ReactDOMComponet {
         this._rootNodeId = rootNodeId;
         let markup = '';
         let props = Object.entries(this._currentElement.props).reduce((props, [key, val]) => {
-            // console.log(key, val);
             if (!this._currentElement.props.hasOwnProperty(key)) {
                 return props;
             }
@@ -69,13 +68,12 @@ export default class ReactDOMComponet {
         let closeTag = `</${this._currentElement.type}>`;
 
         // createElment第三个参数有可能是个数组也可能是单个值，这里统一转换成数组
-        const {children} = this._currentElement.props;
-        const _children = Array.isArray(children) ? children : [children];
-        console.log('ReactDOMComponet-mount=>', _children);
-        for (let i = 0; i < _children.length; i++) {
-            let child = _children[i];
+        let {children} = this._currentElement.props;
+        children = Array.isArray(children) ? children : [children];
+
+        for (let i = 0; i < children.length; i++) {
+            let child = children[i];
             let renderedCompenent = instantiateReactComponent(child);
-            console.log('child, renderedCompenent', child, renderedCompenent);
             // 有可能是个bool
             if (renderedCompenent) {
                 renderedCompenent._mountIndex = i;
@@ -134,23 +132,20 @@ export default class ReactDOMComponet {
     }
 
     _updateDOMChildren(nextChildElements) {
-        _updateDepth++;
-        this._diff(_diffQueue, nextChildElements);
-        _updateDepth--;
+        updateDepth++;
+        this._diff(diffQueue, nextChildElements);
+        updateDepth--;
 
-        if (_updateDepth === 0) {
-            this._patch(_diffQueue);
-            _diffQueue = [];
+        if (updateDepth === 0) {
+            this._patch(diffQueue);
+            diffQueue = [];
         }
     }
 
     // @TODO:为啥不直接对比虚拟dom，还需要先对比component?
-    _diff(_diffQueue, nextChildElements = []) {
-        const prevChildren = _flattenChildren(this._renderedChildren);
+    _diff(diffQueue, nextChildElements = []) {
+        const prevChildren = flattenChildren(this._renderedChildren);
         const nextChildren = this._generateComponentChildren(prevChildren, nextChildElements);
-        console.log('diff nextChildElements=>', nextChildElements);
-        console.log('prevChildren=>', prevChildren);
-        console.log('nextChildren=>', nextChildren);
         // 需要获取下一个children集合
         let nextIndex = 0;
         this._renderedChildren = [];
@@ -172,7 +167,7 @@ export default class ReactDOMComponet {
             // @TODO:待优化，会出现很多fromIndex和toIndex相等的情况，事实上他们并不需要移动，影响性能
             if (nextChild === prevChild) {
                 if (prevChild && lastIndex > prevChild._mountIndex) { // 为啥??
-                    _diffQueue.push({
+                    diffQueue.push({
                         type: UPDATE_TYPES.MOVE_EXISTING,
                         parentId: this._rootNodeId,
                         parentNode,
@@ -183,7 +178,7 @@ export default class ReactDOMComponet {
             } else {
                 // 移除
                 if (prevChild) {
-                    _diffQueue.push({
+                    diffQueue.push({
                         type: UPDATE_TYPES.REMOVE_NODE,
                         parentId: this._rootNodeId,
                         parentNode,
@@ -194,7 +189,7 @@ export default class ReactDOMComponet {
                     event.removeListener(this._rootNodeId);
                 }
 
-                _diffQueue.push({
+                diffQueue.push({
                     type: UPDATE_TYPES.INSERT_MARKUP,
                     parentId: this._rootNodeId,
                     parentNode,
@@ -203,18 +198,23 @@ export default class ReactDOMComponet {
                     markup: nextChild.mountComponent(window.nextReactRootId++) // @TODO:为啥不直接传组件？
                 });
             }
-            nextChild._mountIndex = nextIndex; // 记得更新，不然下次更新没有索引会报错
-            nextIndex++;
+            // @TODO:这个问题困扰了我一天
+            // 放在最后更新 如果nextChild=prevChild， 相当于prevChild._mountIndex也更新了，导致lastIndex值不对
+            // nextChild._mountIndex = nextIndex; // 记得更新，不然下次更新没有索引会报错
+            // nextIndex++;
             if (prevChild) {
                 lastIndex = Math.max(lastIndex, prevChild._mountIndex);
             }
+
+            nextChild._mountIndex = nextIndex; // 记得更新，不然下次更新没有索引会报错
+            nextIndex++;
         }
 
         for (let name in prevChildren) {
             const prevChild = prevChildren[name];
             // 老的有 新的没有 移出
             if (prevChildren.hasOwnProperty(name) && (nextChildren && !nextChildren.hasOwnProperty(name))) {
-                _diffQueue.push({
+                diffQueue.push({
                     type: UPDATE_TYPES.REMOVE_NODE,
                     parentId: this._rootNodeId,
                     parentNode,
@@ -236,7 +236,7 @@ export default class ReactDOMComponet {
         //     // @TODO:不能直接比较引用，应该比较key和type
         //     if (nextChildElement === prevChildElement) {
         //         // 如果都有 说明只要移动就可以了
-        //         _diffQueue.push({
+        //         diffQueue.push({
         //             type: UPDATE_TYPES.MOVE_EXISTING,
         //             parentId: this._rootNodeId,
         //             parentNode,
@@ -246,7 +246,7 @@ export default class ReactDOMComponet {
         //     } else {
         //         // 移除
         //         if (prevChildElement) {
-        //             _diffQueue.push({
+        //             diffQueue.push({
         //                 type: UPDATE_TYPES.REMOVE_NODE,
         //                 parentId: this._rootNodeId,
         //                 parentNode,
@@ -256,7 +256,7 @@ export default class ReactDOMComponet {
         //         }
 
         //         if (nextChildElement) {
-        //             _diffQueue.push({
+        //             diffQueue.push({
         //                 type: UPDATE_TYPES.INSERT_MARKUP,
         //                 parentId: this._rootNodeId,
         //                 parentNode,
@@ -270,9 +270,8 @@ export default class ReactDOMComponet {
     }
 
     _patch() {
-        console.log('_diffQueue', _diffQueue);
-        for (let i = 0; i < _diffQueue.length; i++) {
-            const {parentNode, fromIndex, toIndex, type, markup} = _diffQueue[i] || {};
+        for (let i = 0; i < diffQueue.length; i++) {
+            const {parentNode, fromIndex, toIndex, type, markup} = diffQueue[i] || {};
             const children = parentNode.children;
             switch (type) {
                 case UPDATE_TYPES.MOVE_EXISTING:
@@ -292,7 +291,7 @@ export default class ReactDOMComponet {
                 case UPDATE_TYPES.INSERT_MARKUP:
                     // const insertComponentInst = instantiateReactComponent();
                     // const markup = insertComponentInst.mountComponent(nextReactRootId++);
-                    const child = _html2Node(markup)[0];
+                    const child = html2Node(markup)[0];
                     if (toIndex >= children.length) { // 从尾巴加添加
                         parentNode.appendChild(child);
                     } else {
@@ -318,11 +317,11 @@ export default class ReactDOMComponet {
             const prevChild = prevChildren[name];
             const prevChildElement = prevChild && prevChild._currentElement;
 
-            console.log('prevChildElement', prevChildElement);
-            console.log('nextChildElement', nextChildElement);
+            // @TODO:改变数组顺序的时候，两个元素是相等的，并没有刷新，不符合预期
+            // console.log('prevChildElement', prevChildElement, prevChild);
+            // console.log('nextChildElement', nextChildElement);
 
-            console.log('_shouldUpdateReactCompent=>', _shouldUpdateReactCompent(prevChildElement, nextChildElement));
-            if (_shouldUpdateReactCompent(prevChildElement, nextChildElement)) {
+            if (shouldUpdateReactCompent(prevChildElement, nextChildElement)) {
                 if (nextChildElement && prevChild) { // 注意不能为空 否则 nextChildren=> {0: undefined}
                     prevChild.receiveComponent(nextChildElement);
                     nextChildren[name] = prevChild;

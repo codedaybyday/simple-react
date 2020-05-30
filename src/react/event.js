@@ -23,4 +23,4 @@ const event = {
         }
     }
 };
-export default event;
+export default event; // eslint-disable-line

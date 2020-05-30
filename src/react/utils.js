@@ -8,7 +8,7 @@
  * @param {Array} children 注意：是指渲染后的组件实例集合，并不是指的虚拟dom
  * @return {Object} 集合
  */
-export function _flattenChildren (children = []) {
+export function flattenChildren(children = []) {
     const flattenChildren = {};
 
     children.forEach((child, index) => {
@@ -20,7 +20,7 @@ export function _flattenChildren (children = []) {
 };
 
 // TODO:没太懂。。。场景没缕清 判断时更新还是重新渲染
-export function _shouldUpdateReactCompent(prevEle, nextEle) {
+export function shouldUpdateReactCompent(prevEle, nextEle) {
     // 1
     // if (preEle.type !== nextEle.type || preEle.key !== nextEle.key) {
     //     return true;
@@ -47,7 +47,7 @@ export function _shouldUpdateReactCompent(prevEle, nextEle) {
 
 }
 
-export function _html2Node(html) {
+export function html2Node(html) {
     const div = document.createElement('div');
     div.innerHTML = html;
 

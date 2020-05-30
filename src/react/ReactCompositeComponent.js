@@ -3,7 +3,7 @@
  * @author liubeijing
  */
 import {instantiateReactComponent} from './render';
-import {_shouldUpdateReactCompent} from './utils';
+import {shouldUpdateReactCompent} from './utils';
 
 export default class ReactCompositeComponent {
     constructor(element) {
@@ -21,8 +21,6 @@ export default class ReactCompositeComponent {
         const markup = renderedCompenentInst.mountComponent(this._rootNodeId);
         this._prevRenderedElement = renderedElement;
         this._inst = renderedCompenentInst; // render出来元素的实例
-        console.log('renderedElement=>', renderedElement);
-        console.log('this._currentElement=>', this._currentElement.render);
 
         // TODO:记得传参
         this._currentElement.componentWillMount && this._currentElement.componentWillMount();
@@ -49,8 +47,7 @@ export default class ReactCompositeComponent {
         }
         componentWillUpdate && componentWillUpdate(nextProps, nextState);
 
-        console.log(prevRenderedElement, nextRenderedElement);
-        if (_shouldUpdateReactCompent(prevRenderedElement, nextRenderedElement)) {
+        if (shouldUpdateReactCompent(prevRenderedElement, nextRenderedElement)) {
             // this._inst.mountComponent(nextReactRootId++); // 怎么更新呢？
             this._inst.receiveComponent(nextRenderedElement, nextState); // @TODO:nextState要不要传呢？？？
 
@@ -60,9 +57,6 @@ export default class ReactCompositeComponent {
             this._inst = instantiateReactComponent(nextRenderedElement);
             const markup = this._inst.mountComponent(this._rootNodeId);
             const parentNode = document.querySelector(`[data-reactid="${this._rootNodeId}"]`);
-            // console.log(ele, this._rootNodeId, nextReactRootId);
-            // ele.parentNode && ele.parentNode.innerHTML(markup);
-            console.log(this._rootNodeId, markup);
             parentNode.parentNode.innerHTML = markup;
         }
     }

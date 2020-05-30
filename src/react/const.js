@@ -8,4 +8,4 @@ const UPDATE_TYPES = {
     REMOVE_NODE: 2,
     INSERT_MARKUP: 3
 };
-export default UPDATE_TYPES;
+export default UPDATE_TYPES; // eslint-disable-line

@@ -4,13 +4,13 @@
  */
 import ReactClass from './ReactClass';
 
-export default (spec) => {
+export default spec => {
     // props怎么传过去？？后续怎么实例化的
     class Component extends ReactClass {
         constructor(props) {
             super(props);
             this.props = props;
-            this.state = this.getInitState ? this.getInitState() : null;
+            this.state = this.getInitialState ? this.getInitialState() : null;
         }
     }
     // Constructor.prototype = new ReactClass();

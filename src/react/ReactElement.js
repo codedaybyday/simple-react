@@ -8,4 +8,4 @@ export default class ReactElement {
         this.key = key;
         this.props = props;
     }
-};
+}
