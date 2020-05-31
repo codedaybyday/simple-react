@@ -6,6 +6,7 @@
 export default class ReactClass {
     constructor(props) {
         this.state = {};
+        this.props = props;
     }
 
     render() {}

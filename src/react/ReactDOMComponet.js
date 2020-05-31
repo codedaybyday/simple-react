@@ -32,23 +32,8 @@ export default class ReactDOMComponet {
             }
 
             if (match) {
-                // eventPool[this._rootNodeId][match[1].toLocaleLowerCase()] = (e) => {
-                //     const {path} = e;
-                //     // if (target.dataset.reactid === this._rootNodeId) {
-                //     //     typeof val === 'function' && val();
-                //     // }
-                //     // TODO:事件冒泡还没处理
-                //     path.forEach(ele => {
-                //         if (ele.dataset && ele.dataset.reactid == this._rootNodeId) {
-                //             typeof val === 'function' && val();
-                //         }
-                //     });
-                // };
                 event.addListener(this._rootNodeId, match[1].toLowerCase(), e => {
                     const {path} = e;
-                    // if (target.dataset.reactid === this._rootNodeId) {
-                    //     typeof val === 'function' && val();
-                    // }
                     // TODO:事件冒泡还没处理
                     path.forEach(ele => {
                         if (ele.dataset && +ele.dataset.reactid === this._rootNodeId) {
@@ -58,7 +43,6 @@ export default class ReactDOMComponet {
                 });
 
                 const type = match[1].toLowerCase();
-                // document.addListenerEventListener(type, eventPool[this._rootNodeId][type], false);
                 event.addListener(this._rootNodeId, type);
             }
             return props;
@@ -162,7 +146,6 @@ export default class ReactDOMComponet {
             }
             const nextChild = nextChildren[name];
             const prevChild = prevChildren[name];
-            // console.log(prevChild._mountIndex);
             // 比较component引用
             // @TODO:待优化，会出现很多fromIndex和toIndex相等的情况，事实上他们并不需要移动，影响性能
             if (nextChild === prevChild) {

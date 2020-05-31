@@ -17,9 +17,8 @@ export function flattenChildren(children = []) {
     });
 
     return flattenChildren;
-};
+}
 
-// TODO:没太懂。。。场景没缕清 判断时更新还是重新渲染
 export function shouldUpdateReactCompent(prevEle, nextEle) {
     // 1
     // if (preEle.type !== nextEle.type || preEle.key !== nextEle.key) {
